@@ -4,26 +4,47 @@
     <el-button-group id="buttonGroup">
       <el-button
         type="primary"
-        icon="el-icon-sort"
+        icon="iconfont measuringqiehuanditumoshi"
         @click="switchLayer"
+        title="地图切换"
       ></el-button>
-      <el-button type="primary" icon="el-icon-share"></el-button>
-      <el-button type="primary" icon="el-icon-delete"></el-button>
+      <el-button
+        type="primary"
+        icon="iconfont measuringchangduceliang"
+        title="距离测量"
+        @click="getGeomLengthOrArea('LineString')"
+      ></el-button>
+      <el-button
+        type="primary"
+        icon="iconfont measuringmianjiceliang"
+        title="面积测量"
+        @click="getGeomLengthOrArea('Polygon')"
+      ></el-button>
     </el-button-group>
   </div>
 </template>
 <script>
 import "ol/ol.css";
 import { Map, View } from "ol";
-import tileSource from "ol/source/XYZ";
-import tileLayer from "ol/layer/Tile";
+import { XYZ as tileSource, Vector as vectorSource } from "ol/source";
+import { Tile as tileLayer, Vector as vectorLayer } from "ol/layer";
+import Overlay from "ol/Overlay";
+import { stroke, Fill, style, Circle, Style, Stroke } from "ol/style";
+import { unByKey } from "ol/Observable";
+import { getLength, getArea } from "ol/sphere";
+import { LineString, Polygon } from "ol/geom";
+import Draw from "ol/interaction/Draw";
+
 export default {
   name: "basicLayer",
   data() {
     return {
       map: null,
       googleMap: null,
-      aMap: null
+      aMap: null,
+      vectorSou: null,
+      vectorLay: null,
+      draw: null
     };
   },
   mounted() {
@@ -60,14 +81,65 @@ export default {
       let flag = this.googleMap.getVisible();
       this.googleMap.setVisible(!flag);
       this.aMap.setVisible(flag);
+    },
+    createVector: function() {
+      this.vectorSou = new vectorSource();
+      this.vectorLay = new vectorLayer({
+        source: this.vectorSou,
+        style: new Style({
+          fill: new Fill({
+            color: "rgba(255,255,255,0.2)"
+          }),
+          stroke: new Stroke({
+            color: "#ffcc33",
+            width: 2
+          }),
+          image: new Circle({
+            redius: 5,
+            color: "#ffcc33"
+          })
+        })
+      });
+      this.map.addLayers([this.vectorLay]);
+    },
+    getGeomLengthOrArea: function(geomType) {
+      if (this.vectorLay == null) {
+        this.createVector();
+      }
+    },
+    addInteraction: function(geomType) {
+      let type = geomType == "Polygon" ? "polygon" : "LineString";
+      this.draw = new Draw({
+        source: this.vectorSou,
+        type: type,
+        style: new Style({
+          fill: new Fill({
+            color: 'rgba(255,255,255,0.2)'
+          }),
+          stroke: new Stroke({
+            color: 'rgba(0,0,0,0.5)',
+            lineDash: [10,10],
+            width:2
+          }),
+          image: new Circle({
+            radius: 5,
+            stroke: new Stroke({
+              color: 'rgba(0,0,0,0.7)'
+            }),
+            fill: new Fill({
+              color: 'rgba(255,255,255,0.2)'
+            })
+          })
+        })
+      })
     }
   }
 };
 </script>
 <style lang="less" scoped>
-#buttonGroup{
+#buttonGroup {
   position: fixed;
-  top: 5%;
+  top: 2%;
   right: 2%;
 }
 </style>
