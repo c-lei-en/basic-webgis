@@ -29,4 +29,7 @@ body,
   margin: 0;
   padding: 0;
 }
+.ol-overlaycontainer-stopevent {
+  display: none;
+}
 </style>
