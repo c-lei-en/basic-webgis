@@ -29,7 +29,29 @@ body,
   margin: 0;
   padding: 0;
 }
-.ol-overlaycontainer-stopevent {
+.ol-zoom {
   display: none;
+}
+.ol-tooltip {
+  position: relative;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+  color: white;
+  padding: 4px 8px;
+  opacity: 0.7;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.ol-tooltip-measure {
+  opacity: 1;
+  font-weight: bold;
+}
+.ol-tooltip-static {
+  background-color: #ffcc33;
+  color: black;
+  border: 1px solid white;
+}
+.ol-tooltip el-button{
+  font-size: 12px;
 }
 </style>
