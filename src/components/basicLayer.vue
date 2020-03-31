@@ -11,6 +11,14 @@
       </div>
     </div>
     <div id="baseMap"></div>
+    <el-input class="queryGroup" placeholder="请输入内容" v-model="featureName">
+      <el-button
+        type="primary"
+        slot="append"
+        icon="el-icon-search"
+        @click="queryFeature"
+      ></el-button>
+    </el-input>
     <el-button-group id="buttonGroup">
       <el-button
         type="primary"
@@ -36,59 +44,95 @@
 <script>
 import "ol/ol.css";
 import { Map, View } from "ol";
-import { XYZ as tileSource, Vector as vectorSource } from "ol/source";
+import {
+  XYZ as tileSource,
+  Vector as vectorSource,
+  TileWMS as tileWMS
+} from "ol/source";
 import { Tile as tileLayer, Vector as vectorLayer } from "ol/layer";
+import GeoJSON from "ol/format/GeoJSON";
 import Overlay from "ol/Overlay";
-import { stroke, Fill, style, Circle, Style, Stroke } from "ol/style";
+import {
+  stroke,
+  Fill,
+  style,
+  Circle,
+  Style,
+  Stroke,
+  Icon,
+  Text
+} from "ol/style";
 import { unByKey } from "ol/Observable";
 import { getLength, getArea } from "ol/sphere";
-import { LineString, Polygon } from "ol/geom";
+import { LineString, Polygon, Point } from "ol/geom";
+import Feature from "ol/Feature";
 import Draw from "ol/interaction/Draw";
+import axios from "axios";
 
 export default {
   name: "basicLayer",
   data() {
     return {
       map: null,
-      googleMap: null,//谷歌影像图
-      aMap: null,//高德在线矢量图
-      vectorSou: null,//测量画图矢量源
-      vectorLay: null,//测量画图图层
-      draw: null,//测量画图工具
+      googleMap: null, //谷歌影像图
+      aMap: null, //高德在线矢量图
+      vectorSou: null, //测量画图矢量源
+      vectorLay: null, //测量画图图层
+      draw: null, //测量画图工具
       sketch: null,
-      listener: null,//监听移动事件，方便后面取消监听
-      measureTooltip: null,//覆盖层
-      measureMoveTooltip: null,//移动时的覆盖层element
-      measureTooltipElement: []//绘画结束时的覆盖层element组
+      listener: null, //监听移动事件，方便后面取消监听
+      measureTooltip: null, //覆盖层
+      measureMoveTooltip: null, //移动时的覆盖层element
+      measureTooltipElement: [], //绘画结束时的覆盖层element组
+      featureName: null, //需要查询的地点名称
+      daoguanSource: null, //自己发布的wms服务
+      resultSource: null, //查询到的结果
+      resultLayer: null, //查询到的结果图层
+      resultStyle: null, //结果要素的样式
+      src: null //图片地址
     };
   },
   mounted() {
+    this.src = require("@/assets/point.png");
     this.googleMap = new tileLayer({
       source: new tileSource({
         url:
           "http://mt2.google.cn/vt/lyrs=y&hl=zh-CN&gl=CN&src=app&x={x}&y={y}&z={z}&s=G"
       }),
-      projection: "EPSG:3857"
+      projection: "EPSG:4326"
     });
     this.aMap = new tileLayer({
       source: new tileSource({
         url:
           "http://webrd03.is.autonavi.com/appmaptile?x={x}&y={y}&z={z}&lang=zh_cn&size=1&scale=1&style=8"
       }),
-      projection: "EPSG:3857"
+      projection: "EPSG:4326"
     });
     this.googleMap.setVisible(false);
+    // 加载wms地图
+    this.daoguanSource = new tileWMS({
+      url: "http://localhost:8519/geoserver/dao/wms",
+      params: {
+        LAYERS: "dao:postgisdaoguan",
+        TILED: true
+      },
+      serverType: "geoserver",
+      projection: "EPSG:4326"
+    });
+    let daoguanLayer = new tileLayer({
+      source: this.daoguanSource
+    });
     let view = new View({
-      center: [104.0, 36.0],
-      zoom: 7,
+      center: [113.77441, 33.70605],
+      zoom: 8,
       maxZoom: 15,
       minZoom: 1,
-      projection: "EPSG:3857"
+      projection: "EPSG:4326"
     });
     this.map = new Map({
       target: "baseMap",
       view: view,
-      layers: [this.googleMap, this.aMap]
+      layers: [this.googleMap, this.aMap, daoguanLayer]
     });
   },
   methods: {
@@ -124,9 +168,14 @@ export default {
       if (this.vectorLay == null) {
         this.createVector();
       }
-      this.createMeasureTooltip();
-      this.addInteraction(geomType);
-      this.map.addInteraction(this.draw);
+      if (this.draw != null) {
+        this.map.removeInteraction(this.draw);
+        this.draw = null;
+      } else {
+        this.createMeasureTooltip();
+        this.addInteraction(geomType);
+        this.map.addInteraction(this.draw);
+      }
     },
     // 将测量工具添加到map中
     addInteraction: function(geomType) {
@@ -192,6 +241,7 @@ export default {
         });
         unByKey(this.listener);
         this.map.removeInteraction(this.draw);
+        this.draw = null;
       });
     },
     // 计算长度并且转换单位
@@ -241,6 +291,43 @@ export default {
       this.map.removeOverlay(overlay);
       this.measureTooltipElement[index] = null;
     },
+    // 进行图层属性查询
+    queryFeature: function() {
+      if (this.featureName != null && this.featureName != "") {
+        axios
+          .get(
+            "http://localhost:8519/geoserver/dao/ows?" +
+              "service=WFS&request=GetFeature&typeName=dao:queryFeature" +
+              "&outputFormat=application%2Fjson&viewparams=name:" +
+              this.featureName
+          )
+          .then(value => {
+            let point,
+              pointArr = [];
+            if (value.data.totalFeatures == 0) {
+              this.$message.error("未查询到相关地点");
+            } else {
+              for (let feature of value.data.features) {
+                point = new GeoJSON().readFeatures(feature);
+                point[0].setStyle(
+                  this.setFeatureStyle(feature.properties.name)
+                );
+                pointArr.push(point[0]);
+              }
+              this.resultSource = new vectorSource({
+                features: pointArr
+              });
+              this.resultLayer = new vectorLayer({
+                source: this.resultSource
+              });
+              this.map.addLayer(this.resultLayer);
+              this.map.getView().fit(this.resultSource.getExtent());
+            }
+          });
+      } else {
+        this.$message.error("请输入要查询的地点名称");
+      }
+    },
     // 得到当前div的下标
     getArrayIndex: function(arr, obj) {
       var i = arr.length;
@@ -254,14 +341,43 @@ export default {
     // 动态设置id
     step: function(i) {
       return "step" + i;
+    },
+    setFeatureStyle: function(name) {
+      return new Style({
+        image: new Icon({
+          scale: 0.1,
+          anchor: [0.5, 1],
+          src: this.src
+        }),
+        text: new Text({
+          text: name,
+          textAlign: "center",
+          offsetY: -30,
+          fill: new Fill({
+            color: "yellow"
+          }),
+          backgroundFill: new Fill({
+            color: "#750075"
+          })
+        })
+      });
     }
   }
 };
 </script>
 <style lang="less" scoped>
+@top: 2%;
+@posotion: fixed;
+@leftOrRight: 2%;
 #buttonGroup {
+  position: @posotion;
+  top: @top;
+  right: @leftOrRight;
+}
+.queryGroup {
   position: fixed;
   top: 2%;
-  right: 2%;
+  left: 2%;
+  width: 15%;
 }
 </style>
