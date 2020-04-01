@@ -11,6 +11,20 @@
       </div>
     </div>
     <div id="baseMap"></div>
+    <el-table :data="tableData" class="featureTable" v-show="flag">
+      <el-table-column prop="name" label="名称" width="150"> </el-table-column>
+      <el-table-column label="操作" width="130">
+        <template slot-scope="scope">
+          <el-button
+            @click.native.prevent="zoomToFeature(scope.row)"
+            type="text"
+            size="small"
+          >
+            移动至
+          </el-button>
+        </template>
+      </el-table-column>
+    </el-table>
     <el-input class="queryGroup" placeholder="请输入内容" v-model="featureName">
       <el-button
         type="primary"
@@ -79,6 +93,7 @@ export default {
       vectorSou: null, //测量画图矢量源
       vectorLay: null, //测量画图图层
       draw: null, //测量画图工具
+      geomType: null, //绘画类型
       sketch: null,
       listener: null, //监听移动事件，方便后面取消监听
       measureTooltip: null, //覆盖层
@@ -89,7 +104,9 @@ export default {
       resultSource: null, //查询到的结果
       resultLayer: null, //查询到的结果图层
       resultStyle: null, //结果要素的样式
-      src: null //图片地址
+      src: null, //图片地址
+      tableData: [], //查询到的结果的名称
+      flag: false
     };
   },
   mounted() {
@@ -122,6 +139,10 @@ export default {
     let daoguanLayer = new tileLayer({
       source: this.daoguanSource
     });
+    this.resultSource = new vectorSource();
+    this.resultLayer = new vectorLayer({
+      source: this.resultSource
+    });
     let view = new View({
       center: [113.77441, 33.70605],
       zoom: 8,
@@ -132,7 +153,7 @@ export default {
     this.map = new Map({
       target: "baseMap",
       view: view,
-      layers: [this.googleMap, this.aMap, daoguanLayer]
+      layers: [this.googleMap, this.aMap, daoguanLayer, this.resultLayer]
     });
   },
   methods: {
@@ -168,10 +189,14 @@ export default {
       if (this.vectorLay == null) {
         this.createVector();
       }
-      if (this.draw != null) {
-        this.map.removeInteraction(this.draw);
-        this.draw = null;
+      if (this.geomType && this.geomType == geomType) {
+        if (this.draw) {
+          this.map.getInteractions().array_.length=9;
+          this.draw = null;
+          this.geomType = null;
+        }
       } else {
+        this.geomType = geomType;
         this.createMeasureTooltip();
         this.addInteraction(geomType);
         this.map.addInteraction(this.draw);
@@ -239,9 +264,9 @@ export default {
           this.measureTooltip.setPosition(coordinate);
           ev.feature.setId(divId);
         });
-        unByKey(this.listener);
         this.map.removeInteraction(this.draw);
         this.draw = null;
+        unByKey(this.listener);
       });
     },
     // 计算长度并且转换单位
@@ -289,11 +314,13 @@ export default {
       node.parentNode.removeChild(node);
       let overlay = this.map.getOverlayById(featureId);
       this.map.removeOverlay(overlay);
-      this.measureTooltipElement[index] = null;
+      this.measureTooltipElement[index] = "";
     },
     // 进行图层属性查询
     queryFeature: function() {
-      if (this.featureName != null && this.featureName != "") {
+      this.flag = false;
+      this.tableData = [];
+      if (this.featureName) {
         axios
           .get(
             "http://localhost:8519/geoserver/dao/ows?" +
@@ -302,6 +329,7 @@ export default {
               this.featureName
           )
           .then(value => {
+            this.resultSource.clear();
             let point,
               pointArr = [];
             if (value.data.totalFeatures == 0) {
@@ -312,21 +340,24 @@ export default {
                 point[0].setStyle(
                   this.setFeatureStyle(feature.properties.name)
                 );
+                point[0].setId(feature.properties.name);
+                this.tableData.push({
+                  name: feature.properties.name,
+                  feature: point[0]
+                });
+                this.flag = true;
                 pointArr.push(point[0]);
               }
-              this.resultSource = new vectorSource({
-                features: pointArr
-              });
-              this.resultLayer = new vectorLayer({
-                source: this.resultSource
-              });
-              this.map.addLayer(this.resultLayer);
+              this.resultSource.addFeatures(pointArr);
               this.map.getView().fit(this.resultSource.getExtent());
             }
           });
       } else {
         this.$message.error("请输入要查询的地点名称");
       }
+    },
+    zoomToFeature: function(row) {
+      this.map.getView().fit(row.feature.getGeometry());
     },
     // 得到当前div的下标
     getArrayIndex: function(arr, obj) {
@@ -342,6 +373,7 @@ export default {
     step: function(i) {
       return "step" + i;
     },
+    //设置feature样式
     setFeatureStyle: function(name) {
       return new Style({
         image: new Icon({
@@ -367,17 +399,23 @@ export default {
 </script>
 <style lang="less" scoped>
 @top: 2%;
-@posotion: fixed;
+@position: fixed;
 @leftOrRight: 2%;
 #buttonGroup {
-  position: @posotion;
+  position: @position;
   top: @top;
   right: @leftOrRight;
 }
 .queryGroup {
-  position: fixed;
-  top: 2%;
-  left: 2%;
+  position: @position;
+  top: @top;
+  left: @leftOrRight;
+  width: 15%;
+}
+.featureTable {
+  position: @position;
+  top: 6%;
+  left: @leftOrRight;
   width: 15%;
 }
 </style>
