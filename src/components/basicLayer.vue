@@ -155,6 +155,20 @@ export default {
       view: view,
       layers: [this.googleMap, this.aMap, daoguanLayer, this.resultLayer]
     });
+    this.map.on("singleclick", evt => {
+      let viewResolution = view.getResolution();
+      let url = this.daoguanSource.getFeatureInfoUrl(
+        evt.coordinate,
+        viewResolution,
+        "EPSG:4326",
+        { INFO_FORMAT: "application/json" }
+      );
+      if (url) {
+        axios.get(url).then(response => {
+          console.log(response.data);
+        });
+      }
+    });
   },
   methods: {
     //地图切换
@@ -191,7 +205,7 @@ export default {
       }
       if (this.geomType && this.geomType == geomType) {
         if (this.draw) {
-          this.map.getInteractions().array_.length=9;
+          this.map.getInteractions().array_.length = 9;
           this.draw = null;
           this.geomType = null;
         }
